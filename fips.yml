@@ -1,0 +1,6 @@
+# flatbuffers
+---
+exports:
+  header-dirs: [ include ]
+  modules:
+    flatbuffers: fips
