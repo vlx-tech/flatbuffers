@@ -1,0 +1,14 @@
+# flatbuffers
+
+SubDir TOP external flatbuffers ;
+
+SOURCES +=         
+    $(SUBDIR)/src/code_generators.cpp
+    $(SUBDIR)/src/idl_parser.cpp
+    $(SUBDIR)/src/idl_gen_text.cpp
+    $(SUBDIR)/src/reflection.cpp
+    $(SUBDIR)/src/util.cpp
+;
+
+C.IncludeDirectories * : include ;
+C.Library external-flatbuffers : $(SOURCES) ;
