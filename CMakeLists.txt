@@ -172,6 +172,7 @@ include_directories(grpc)
 
 if(FLATBUFFERS_BUILD_FLATLIB)
 add_library(flatbuffers STATIC ${FlatBuffers_Library_SRCS})
+target_include_directories(flatbuffers PUBLIC include)
 endif()
 
 if(FLATBUFFERS_BUILD_FLATC)
