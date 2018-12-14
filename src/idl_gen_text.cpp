@@ -51,7 +51,7 @@ bool Print(T val, Type type, int /*indent*/, Type * /*union_type*/,
            const IDLOptions &opts, std::string *_text) {
   std::string &text = *_text;
   if (type.enum_def && opts.output_enum_identifiers) {
-    auto enum_val = type.enum_def->ReverseLookup(static_cast<int>(val));
+    auto enum_val = type.enum_def->ReverseLookup(static_cast<int64_t>(val));
     if (enum_val) {
       text += "\"";
       text += enum_val->name;
@@ -108,7 +108,7 @@ bool Print<const void *>(const void *val, Type type, int indent,
     case BASE_TYPE_UNION:
       // If this assert hits, you have an corrupt buffer, a union type field
       // was not present or was out of range.
-      assert(union_type);
+      FLATBUFFERS_ASSERT(union_type);
       return Print<const void *>(val, *union_type, indent, nullptr, opts,
                                  _text);
     case BASE_TYPE_STRUCT:
@@ -119,7 +119,8 @@ bool Print<const void *>(const void *val, Type type, int indent,
       break;
     case BASE_TYPE_STRING: {
       auto s = reinterpret_cast<const String *>(val);
-      if (!EscapeString(s->c_str(), s->Length(), _text, opts.allow_non_utf8)) {
+      if (!EscapeString(s->c_str(), s->Length(), _text, opts.allow_non_utf8,
+                        opts.natural_utf8)) {
         return false;
       }
       break;
@@ -130,7 +131,7 @@ bool Print<const void *>(const void *val, Type type, int indent,
       switch (type.base_type) {
         // clang-format off
         #define FLATBUFFERS_TD(ENUM, IDLTYPE, \
-          CTYPE, JTYPE, GTYPE, NTYPE, PTYPE) \
+          CTYPE, JTYPE, GTYPE, NTYPE, PTYPE, RTYPE) \
           case BASE_TYPE_ ## ENUM: \
             if (!PrintVector<CTYPE>( \
                   *reinterpret_cast<const Vector<CTYPE> *>(val), \
@@ -143,24 +144,28 @@ bool Print<const void *>(const void *val, Type type, int indent,
         // clang-format on
       }
       break;
-    default: assert(0);
+    default: FLATBUFFERS_ASSERT(0);
   }
   return true;
 }
 
+template<typename T> static T GetFieldDefault(const FieldDef &fd) {
+  T val;
+  auto check = StringToNumber(fd.value.constant.c_str(), &val);
+  (void)check;
+  FLATBUFFERS_ASSERT(check);
+  return val;
+}
+
 // Generate text for a scalar field.
-template<typename T> static bool GenField(const FieldDef &fd,
-                                          const Table *table, bool fixed,
-                                          const IDLOptions &opts,
-                                          int indent,
-                                          std::string *_text) {
-  return Print(fixed ?
-    reinterpret_cast<const Struct *>(table)->GetField<T>(fd.value.offset) :
-    table->GetField<T>(fd.value.offset,
-    IsFloat(fd.value.type.base_type) ?
-    static_cast<T>(strtod(fd.value.constant.c_str(), nullptr)) :
-    static_cast<T>(StringToInt(fd.value.constant.c_str()))),
-    fd.value.type, indent, nullptr, opts, _text);
+template<typename T>
+static bool GenField(const FieldDef &fd, const Table *table, bool fixed,
+                     const IDLOptions &opts, int indent, std::string *_text) {
+  return Print(
+      fixed ? reinterpret_cast<const Struct *>(table)->GetField<T>(
+                  fd.value.offset)
+            : table->GetField<T>(fd.value.offset, GetFieldDefault<T>(fd)),
+      fd.value.type, indent, nullptr, opts, _text);
 }
 
 static bool GenStruct(const StructDef &struct_def, const Table *table,
@@ -173,7 +178,7 @@ static bool GenFieldOffset(const FieldDef &fd, const Table *table, bool fixed,
   const void *val = nullptr;
   if (fixed) {
     // The only non-scalar fields in structs are structs.
-    assert(IsStruct(fd.value.type));
+    FLATBUFFERS_ASSERT(IsStruct(fd.value.type));
     val = reinterpret_cast<const Struct *>(table)->GetStruct<const void *>(
         fd.value.offset);
   } else if (fd.flexbuffer) {
@@ -222,7 +227,7 @@ static bool GenStruct(const StructDef &struct_def, const Table *table,
       switch (fd.value.type.base_type) {
           // clang-format off
           #define FLATBUFFERS_TD(ENUM, IDLTYPE, \
-            CTYPE, JTYPE, GTYPE, NTYPE, PTYPE) \
+            CTYPE, JTYPE, GTYPE, NTYPE, PTYPE, RTYPE) \
             case BASE_TYPE_ ## ENUM: \
               if (!GenField<CTYPE>(fd, table, struct_def.fixed, \
                                    opts, indent + Indent(opts), _text)) { \
@@ -233,7 +238,7 @@ static bool GenStruct(const StructDef &struct_def, const Table *table,
         #undef FLATBUFFERS_TD
         // Generate drop-thru case statements for all pointer types:
         #define FLATBUFFERS_TD(ENUM, IDLTYPE, \
-          CTYPE, JTYPE, GTYPE, NTYPE, PTYPE) \
+          CTYPE, JTYPE, GTYPE, NTYPE, PTYPE, RTYPE) \
           case BASE_TYPE_ ## ENUM:
           FLATBUFFERS_GEN_TYPES_POINTER(FLATBUFFERS_TD)
         #undef FLATBUFFERS_TD
@@ -261,10 +266,11 @@ static bool GenStruct(const StructDef &struct_def, const Table *table,
 bool GenerateText(const Parser &parser, const void *flatbuffer,
                   std::string *_text) {
   std::string &text = *_text;
-  assert(parser.root_struct_def_);  // call SetRootType()
+  FLATBUFFERS_ASSERT(parser.root_struct_def_);  // call SetRootType()
   text.reserve(1024);               // Reduce amount of inevitable reallocs.
-  if (!GenStruct(*parser.root_struct_def_, GetRoot<Table>(flatbuffer), 0,
-                 parser.opts, _text)) {
+  auto root = parser.opts.size_prefixed ?
+      GetSizePrefixedRoot<Table>(flatbuffer) : GetRoot<Table>(flatbuffer);
+  if (!GenStruct(*parser.root_struct_def_, root, 0, parser.opts, _text)) {
     return false;
   }
   text += NewLine(parser.opts);

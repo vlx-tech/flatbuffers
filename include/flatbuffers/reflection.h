@@ -72,20 +72,20 @@ inline const Table *GetAnyRoot(const uint8_t *flatbuf) {
 
 // Get a field's default, if you know it's an integer, and its exact type.
 template<typename T> T GetFieldDefaultI(const reflection::Field &field) {
-  assert(sizeof(T) == GetTypeSize(field.type()->base_type()));
+  FLATBUFFERS_ASSERT(sizeof(T) == GetTypeSize(field.type()->base_type()));
   return static_cast<T>(field.default_integer());
 }
 
 // Get a field's default, if you know it's floating point and its exact type.
 template<typename T> T GetFieldDefaultF(const reflection::Field &field) {
-  assert(sizeof(T) == GetTypeSize(field.type()->base_type()));
+  FLATBUFFERS_ASSERT(sizeof(T) == GetTypeSize(field.type()->base_type()));
   return static_cast<T>(field.default_real());
 }
 
 // Get a field, if you know it's an integer, and its exact type.
 template<typename T>
 T GetFieldI(const Table &table, const reflection::Field &field) {
-  assert(sizeof(T) == GetTypeSize(field.type()->base_type()));
+  FLATBUFFERS_ASSERT(sizeof(T) == GetTypeSize(field.type()->base_type()));
   return table.GetField<T>(field.offset(),
                            static_cast<T>(field.default_integer()));
 }
@@ -93,7 +93,7 @@ T GetFieldI(const Table &table, const reflection::Field &field) {
 // Get a field, if you know it's floating point and its exact type.
 template<typename T>
 T GetFieldF(const Table &table, const reflection::Field &field) {
-  assert(sizeof(T) == GetTypeSize(field.type()->base_type()));
+  FLATBUFFERS_ASSERT(sizeof(T) == GetTypeSize(field.type()->base_type()));
   return table.GetField<T>(field.offset(),
                            static_cast<T>(field.default_real()));
 }
@@ -101,15 +101,15 @@ T GetFieldF(const Table &table, const reflection::Field &field) {
 // Get a field, if you know it's a string.
 inline const String *GetFieldS(const Table &table,
                                const reflection::Field &field) {
-  assert(field.type()->base_type() == reflection::String);
+  FLATBUFFERS_ASSERT(field.type()->base_type() == reflection::String);
   return table.GetPointer<const String *>(field.offset());
 }
 
 // Get a field, if you know it's a vector.
 template<typename T>
 Vector<T> *GetFieldV(const Table &table, const reflection::Field &field) {
-  assert(field.type()->base_type() == reflection::Vector &&
-         sizeof(T) == GetTypeSize(field.type()->element()));
+  FLATBUFFERS_ASSERT(field.type()->base_type() == reflection::Vector &&
+                     sizeof(T) == GetTypeSize(field.type()->element()));
   return table.GetPointer<Vector<T> *>(field.offset());
 }
 
@@ -123,8 +123,8 @@ inline VectorOfAny *GetFieldAnyV(const Table &table,
 
 // Get a field, if you know it's a table.
 inline Table *GetFieldT(const Table &table, const reflection::Field &field) {
-  assert(field.type()->base_type() == reflection::Obj ||
-         field.type()->base_type() == reflection::Union);
+  FLATBUFFERS_ASSERT(field.type()->base_type() == reflection::Obj ||
+                     field.type()->base_type() == reflection::Union);
   return table.GetPointer<Table *>(field.offset());
 }
 
@@ -133,14 +133,14 @@ inline const Struct *GetFieldStruct(const Table &table,
                                     const reflection::Field &field) {
   // TODO: This does NOT check if the field is a table or struct, but we'd need
   // access to the schema to check the is_struct flag.
-  assert(field.type()->base_type() == reflection::Obj);
+  FLATBUFFERS_ASSERT(field.type()->base_type() == reflection::Obj);
   return table.GetStruct<const Struct *>(field.offset());
 }
 
 // Get a structure's field, if you know it's a struct.
 inline const Struct *GetFieldStruct(const Struct &structure,
                                     const reflection::Field &field) {
-  assert(field.type()->base_type() == reflection::Obj);
+  FLATBUFFERS_ASSERT(field.type()->base_type() == reflection::Obj);
   return structure.GetStruct<const Struct *>(field.offset());
 }
 
@@ -228,7 +228,7 @@ inline std::string GetAnyVectorElemS(const VectorOfAny *vec,
 template<typename T>
 T *GetAnyVectorElemPointer(const VectorOfAny *vec, size_t i) {
   auto elem_ptr = vec->Data() + sizeof(uoffset_t) * i;
-  return (T *)(elem_ptr + ReadScalar<uoffset_t>(elem_ptr));
+  return reinterpret_cast<T*>(elem_ptr + ReadScalar<uoffset_t>(elem_ptr));
 }
 
 // Get the inline-address of a vector element. Useful for Structs (pass Struct
@@ -239,20 +239,19 @@ T *GetAnyVectorElemPointer(const VectorOfAny *vec, size_t i) {
 template<typename T>
 T *GetAnyVectorElemAddressOf(const VectorOfAny *vec, size_t i,
                              size_t elem_size) {
-  // C-cast to allow const conversion.
-  return (T *)(vec->Data() + elem_size * i);
+  return reinterpret_cast<T *>(vec->Data() + elem_size * i);
 }
 
 // Similarly, for elements of tables.
 template<typename T>
 T *GetAnyFieldAddressOf(const Table &table, const reflection::Field &field) {
-  return (T *)table.GetAddressOf(field.offset());
+  return reinterpret_cast<T *>(table.GetAddressOf(field.offset()));
 }
 
 // Similarly, for elements of structs.
 template<typename T>
 T *GetAnyFieldAddressOf(const Struct &st, const reflection::Field &field) {
-  return (T *)st.GetAddressOf(field.offset());
+  return reinterpret_cast<T *>(st.GetAddressOf(field.offset()));
 }
 
 // ------------------------- SETTERS -------------------------
@@ -262,12 +261,12 @@ template<typename T>
 bool SetField(Table *table, const reflection::Field &field, T val) {
   reflection::BaseType type = field.type()->base_type();
   if (!IsScalar(type)) { return false; }
-  assert(sizeof(T) == GetTypeSize(type));
+  FLATBUFFERS_ASSERT(sizeof(T) == GetTypeSize(type));
   T def;
   if (IsInteger(type)) {
     def = GetFieldDefaultI<T>(field);
   } else {
-    assert(IsFloat(type));
+    FLATBUFFERS_ASSERT(IsFloat(type));
     def = GetFieldDefaultF<T>(field);
   }
   return table->SetField(field.offset(), val, def);
@@ -386,7 +385,7 @@ inline const reflection::Object &GetUnionType(
   // TODO: this is clumsy and slow, but no other way to find it?
   auto type_field = parent.fields()->LookupByKey(
       (unionfield.name()->str() + UnionTypeFieldSuffix()).c_str());
-  assert(type_field);
+  FLATBUFFERS_ASSERT(type_field);
   auto union_type = GetFieldI<uint8_t>(table, *type_field);
   auto enumval = enumdef->values()->LookupByKey(union_type);
   return *enumval->object();
@@ -444,7 +443,8 @@ const uint8_t *AddFlatBuffer(std::vector<uint8_t> &flatbuf,
 
 inline bool SetFieldT(Table *table, const reflection::Field &field,
                       const uint8_t *val) {
-  assert(sizeof(uoffset_t) == GetTypeSize(field.type()->base_type()));
+  FLATBUFFERS_ASSERT(sizeof(uoffset_t) ==
+                     GetTypeSize(field.type()->base_type()));
   return table->SetPointer(field.offset(), val);
 }
 

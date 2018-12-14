@@ -43,7 +43,7 @@ static std::string GeneratedFileName(const std::string &path,
 namespace go {
 
 // see https://golang.org/ref/spec#Keywords
-static const char *g_golang_keywords[] = {
+static const char * const g_golang_keywords[] = {
   "break",  "default", "func",        "interface", "select", "case", "defer",
   "go",     "map",     "struct",      "chan",      "else",   "goto", "package",
   "switch", "const",   "fallthrough", "if",        "range",  "type", "continue",
@@ -52,6 +52,7 @@ static const char *g_golang_keywords[] = {
 
 static std::string GenGetter(const Type &type);
 static std::string GenMethod(const FieldDef &field);
+static std::string GenConstant(const FieldDef &field);
 static void GenStructBuilder(const StructDef &struct_def,
                              std::string *code_ptr);
 static void GenReceiver(const StructDef &struct_def, std::string *code_ptr);
@@ -86,6 +87,18 @@ static void BeginClass(const StructDef &struct_def, std::string *code_ptr) {
   code += "\n}\n\n";
 }
 
+// Construct the name of the type alias for this enum.
+std::string GetEnumTypeName(const EnumDef &enum_def) {
+  return GoIdentity(enum_def.name);
+}
+
+// Create a type for the enum values.
+static void GenEnumType(const EnumDef &enum_def, std::string *code_ptr) {
+  std::string &code = *code_ptr;
+  code += "type " + GetEnumTypeName(enum_def) + " = ";
+  code += GenTypeBasic(enum_def.underlying_type) + "\n";
+}
+
 // Begin enum code with a class declaration.
 static void BeginEnum(std::string *code_ptr) {
   std::string &code = *code_ptr;
@@ -99,6 +112,8 @@ static void EnumMember(const EnumDef &enum_def, const EnumVal ev,
   code += "\t";
   code += enum_def.name;
   code += ev.name;
+  code += " ";
+  code += GetEnumTypeName(enum_def);
   code += " = ";
   code += NumToString(ev.value) + "\n";
 }
@@ -114,7 +129,7 @@ static void BeginEnumNames(const EnumDef &enum_def, std::string *code_ptr) {
   std::string &code = *code_ptr;
   code += "var EnumNames";
   code += enum_def.name;
-  code += " = map[int]string{\n";
+  code += " = map[" + GetEnumTypeName(enum_def) + "]string{\n";
 }
 
 // A single enum name member.
@@ -231,7 +246,7 @@ static void GetScalarFieldOfTable(const StructDef &struct_def,
   code += "() " + TypeName(field) + " ";
   code += OffsetPrefix(field) + "\t\treturn " + getter;
   code += "(o + rcv._tab.Pos)\n\t}\n";
-  code += "\treturn " + field.value.constant + "\n";
+  code += "\treturn " + GenConstant(field) + "\n";
   code += "}\n\n";
 }
 
@@ -347,6 +362,8 @@ static void GetMemberOfVectorOfNonStruct(const StructDef &struct_def,
   code += "\t}\n";
   if (vectortype.base_type == BASE_TYPE_STRING) {
     code += "\treturn nil\n";
+  } else if (vectortype.base_type == BASE_TYPE_BOOL) {
+    code += "\treturn false\n";
   } else {
     code += "\treturn 0\n";
   }
@@ -381,7 +398,7 @@ static void StructBuilderArgs(const StructDef &struct_def,
                         (nameprefix + (field.name + "_")).c_str(), code_ptr);
     } else {
       std::string &code = *code_ptr;
-      code += (std::string) ", " + nameprefix;
+      code += std::string(", ") + nameprefix;
       code += GoIdentity(field.name);
       code += " " + GenTypeBasic(field.value.type);
     }
@@ -457,7 +474,7 @@ static void BuildFieldOfTable(const StructDef &struct_def,
   } else {
     code += GoIdentity(field.name);
   }
-  code += ", " + field.value.constant;
+  code += ", " + GenConstant(field);
   code += ")\n}\n";
 }
 
@@ -522,7 +539,7 @@ static void GenStructAccessor(const StructDef &struct_def,
         break;
       }
       case BASE_TYPE_UNION: GetUnionField(struct_def, field, code_ptr); break;
-      default: assert(0);
+      default: FLATBUFFERS_ASSERT(0);
     }
   }
   if (field.value.type.base_type == BASE_TYPE_VECTOR) {
@@ -636,6 +653,7 @@ static void GenEnum(const EnumDef &enum_def, std::string *code_ptr) {
   if (enum_def.generated) return;
 
   GenComment(enum_def.doc_comment, code_ptr, nullptr);
+  GenEnumType(enum_def, code_ptr);
   BeginEnum(code_ptr);
   for (auto it = enum_def.vals.vec.begin(); it != enum_def.vals.vec.end();
        ++it) {
@@ -660,7 +678,7 @@ static std::string GenGetter(const Type &type) {
     case BASE_TYPE_STRING: return "rcv._tab.ByteVector";
     case BASE_TYPE_UNION: return "rcv._tab.Union";
     case BASE_TYPE_VECTOR: return GenGetter(type.VectorType());
-    default: return "rcv._tab.Get" + MakeCamel(GenTypeGet(type));
+    default: return "rcv._tab.Get" + MakeCamel(GenTypeBasic(type));
   }
 }
 
@@ -675,7 +693,7 @@ static std::string GenTypeBasic(const Type &type) {
   static const char *ctypename[] = {
   // clang-format off
     #define FLATBUFFERS_TD(ENUM, IDLTYPE, \
-      CTYPE, JTYPE, GTYPE, NTYPE, PTYPE) \
+      CTYPE, JTYPE, GTYPE, NTYPE, PTYPE, RTYPE) \
       #GTYPE,
       FLATBUFFERS_GEN_TYPES(FLATBUFFERS_TD)
     #undef FLATBUFFERS_TD
@@ -696,11 +714,21 @@ static std::string GenTypePointer(const Type &type) {
 }
 
 static std::string GenTypeGet(const Type &type) {
+  if (type.enum_def != nullptr && !type.enum_def->is_union) {
+    return GetEnumTypeName(*type.enum_def);
+  }
   return IsScalar(type.base_type) ? GenTypeBasic(type) : GenTypePointer(type);
 }
 
 static std::string TypeName(const FieldDef &field) {
   return GenTypeGet(field.value.type);
+}
+
+static std::string GenConstant(const FieldDef &field) {
+  switch (field.value.type.base_type) {
+    case BASE_TYPE_BOOL: return field.value.constant == "0" ? "false" : "true";;
+    default: return field.value.constant;
+  }
 }
 
 // Create a struct with a builder and the struct's arguments.
@@ -767,7 +795,7 @@ class GoGenerator : public BaseGenerator {
   void BeginFile(const std::string name_space_name, const bool needs_imports,
                  std::string *code_ptr) {
     std::string &code = *code_ptr;
-    code = code + "// " + FlatBuffersGeneratedWarning() + "\n\n";
+    code = code + "// Code generated by the FlatBuffers compiler. DO NOT EDIT.\n\n";
     code += "package " + name_space_name + "\n\n";
     if (needs_imports) {
       code += "import (\n";

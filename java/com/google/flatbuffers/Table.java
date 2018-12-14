@@ -122,7 +122,7 @@ public class Table {
         cr.throwException();
       }
     } catch (CharacterCodingException x) {
-      throw new Error(x);
+      throw new RuntimeException(x);
     }
 
     return dst.flip().toString();
@@ -169,6 +169,27 @@ public class Table {
     int vectorstart = __vector(o);
     bb.position(vectorstart);
     bb.limit(vectorstart + __vector_len(o) * elem_size);
+    return bb;
+  }
+
+  /**
+   * Initialize vector as a ByteBuffer.
+   *
+   * This is more efficient than using duplicate, since it doesn't copy the data
+   * nor allocattes a new {@link ByteBuffer}, creating no garbage to be collected.
+   *
+   * @param bb The {@link ByteBuffer} for the array
+   * @param vector_offset The position of the vector in the byte buffer
+   * @param elem_size The size of each element in the array
+   * @return The {@link ByteBuffer} for the array
+   */
+  protected ByteBuffer __vector_in_bytebuffer(ByteBuffer bb, int vector_offset, int elem_size) {
+    int o = this.__offset(vector_offset);
+    if (o == 0) return null;
+    int vectorstart = __vector(o);
+    bb.rewind();
+    bb.limit(vectorstart + __vector_len(o) * elem_size);
+    bb.position(vectorstart);
     return bb;
   }
 
@@ -270,6 +291,18 @@ public class Table {
         return bb.get(i + startPos_1) - key[i];
     }
     return len_1 - len_2;
+  }
+
+  /**
+   * Resets the internal state with a null {@code ByteBuffer} and a zero position.
+   *
+   * This method exists primarily to allow recycling Table instances without risking memory leaks
+   * due to {@code ByteBuffer} references. The instance will be unusable until it is assigned
+   * again to a {@code ByteBuffer}.
+   */
+  public void __reset() {
+    bb = null;
+    bb_pos = 0;
   }
 }
 

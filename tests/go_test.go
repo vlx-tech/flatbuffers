@@ -156,6 +156,14 @@ func CheckReadBuffer(buf []byte, offset flatbuffers.UOffsetT, fail func(string, 
 			fail(FailString("name", "MyMonster", got))
 		}
 
+		if got := monster.Color(); example.ColorBlue != got {
+			fail(FailString("color", example.ColorBlue, got))
+		}
+
+		if got := monster.Testbool(); true != got {
+			fail(FailString("testbool", true, got))
+		}
+
 		// initialize a Vec3 from Pos()
 		vec := new(example.Vec3)
 		vec = monster.Pos(vec)
@@ -313,6 +321,7 @@ func CheckMutateBuffer(org []byte, offset flatbuffers.UOffsetT, fail func(string
 	testForOriginalValues := []testcase{
 		testcase{"Hp", func() bool { return monster.Hp() == 80 }},
 		testcase{"Mana", func() bool { return monster.Mana() == 150 }},
+		testcase{"Testbool", func() bool { return monster.Testbool() == true }},
 		testcase{"Pos.X'", func() bool { return monster.Pos(nil).X() == float32(1.0) }},
 		testcase{"Pos.Y'", func() bool { return monster.Pos(nil).Y() == float32(2.0) }},
 		testcase{"Pos.Z'", func() bool { return monster.Pos(nil).Z() == float32(3.0) }},
@@ -325,6 +334,7 @@ func CheckMutateBuffer(org []byte, offset flatbuffers.UOffsetT, fail func(string
 	testMutability := []testcase{
 		testcase{"Hp", func() bool { return monster.MutateHp(70) }},
 		testcase{"Mana", func() bool { return !monster.MutateMana(140) }},
+		testcase{"Testbool", func() bool { return monster.MutateTestbool(false) }},
 		testcase{"Pos.X", func() bool { return monster.Pos(nil).MutateX(10.0) }},
 		testcase{"Pos.Y", func() bool { return monster.Pos(nil).MutateY(20.0) }},
 		testcase{"Pos.Z", func() bool { return monster.Pos(nil).MutateZ(30.0) }},
@@ -337,6 +347,7 @@ func CheckMutateBuffer(org []byte, offset flatbuffers.UOffsetT, fail func(string
 	testForMutatedValues := []testcase{
 		testcase{"Hp", func() bool { return monster.Hp() == 70 }},
 		testcase{"Mana", func() bool { return monster.Mana() == 150 }},
+		testcase{"Testbool", func() bool { return monster.Testbool() == false }},
 		testcase{"Pos.X'", func() bool { return monster.Pos(nil).X() == float32(10.0) }},
 		testcase{"Pos.Y'", func() bool { return monster.Pos(nil).Y() == float32(20.0) }},
 		testcase{"Pos.Z'", func() bool { return monster.Pos(nil).Z() == float32(30.0) }},
@@ -388,6 +399,7 @@ func CheckMutateBuffer(org []byte, offset flatbuffers.UOffsetT, fail func(string
 	// any unnecessary changes to the buffer.
 	monster = example.GetRootAsMonster(buf, offset)
 	monster.MutateHp(80)
+	monster.MutateTestbool(true)
 	monster.Pos(nil).MutateX(1.0)
 	monster.Pos(nil).MutateY(2.0)
 	monster.Pos(nil).MutateZ(3.0)
@@ -1154,6 +1166,7 @@ func CheckGeneratedBuild(fail func(string, ...interface{})) ([]byte, flatbuffers
 
 	example.MonsterAddHp(b, 80)
 	example.MonsterAddName(b, str)
+	example.MonsterAddTestbool(b, true)
 	example.MonsterAddInventory(b, inv)
 	example.MonsterAddTestType(b, 1)
 	example.MonsterAddTest(b, mon2)
@@ -1356,31 +1369,28 @@ func CheckFinishedBytesError(fail func(string, ...interface{})) {
 
 // CheckEnumNames checks that the generated enum names are correct.
 func CheckEnumNames(fail func(string, ...interface{})) {
-	type testEnumNames struct {
-		EnumNames map[int]string
-		Expected  map[int]string
+	{
+
+		want := map[example.Any]string{
+			example.AnyNONE:                    "NONE",
+			example.AnyMonster:                 "Monster",
+			example.AnyTestSimpleTableWithEnum: "TestSimpleTableWithEnum",
+			example.AnyMyGame_Example2_Monster: "MyGame_Example2_Monster",
+		}
+		got := example.EnumNamesAny
+		if !reflect.DeepEqual(got, want) {
+			fail("enum name is not equal")
+		}
 	}
-	data := [...]testEnumNames{
-		{example.EnumNamesAny,
-			map[int]string{
-				example.AnyNONE:                    "NONE",
-				example.AnyMonster:                 "Monster",
-				example.AnyTestSimpleTableWithEnum: "TestSimpleTableWithEnum",
-			},
-		},
-		{example.EnumNamesColor,
-			map[int]string{
-				example.ColorRed:   "Red",
-				example.ColorGreen: "Green",
-				example.ColorBlue:  "Blue",
-			},
-		},
-	}
-	for _, t := range data {
-		for val, name := range t.Expected {
-			if name != t.EnumNames[val] {
-				fail("enum name is not equal")
-			}
+	{
+		want := map[example.Color]string{
+			example.ColorRed:   "Red",
+			example.ColorGreen: "Green",
+			example.ColorBlue:  "Blue",
+		}
+		got := example.EnumNamesColor
+		if !reflect.DeepEqual(got, want) {
+			fail("enum name is not equal")
 		}
 	}
 }
